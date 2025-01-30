@@ -2,8 +2,7 @@
 import axios from 'axios';
 import { ReactNode } from 'react';
 
-const BASE_URL = 'http://192.168.11.19:3002/api/laboratorio';
-
+const BASE_URL = 'http://localhost:3002/api/laboratorio';
 // Tipos de estado y urgencia
 export type EstadoSolicitud = 'Pendiente' | 'En Proceso' | 'Completado' | 'Rechazado';
 export type NivelUrgencia = 'Alta' | 'Media' | 'Baja';

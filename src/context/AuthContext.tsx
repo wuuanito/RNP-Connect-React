@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import axios from 'axios';
 import { User, AuthContextType } from '../types/auth';
 
-axios.defaults.baseURL = 'http://192.168.11.19:3002';
+axios.defaults.baseURL = 'http://localhost:3002';
 
 const AuthContext = createContext<AuthContextType | null>(null);
 

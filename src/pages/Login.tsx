@@ -35,7 +35,7 @@ export default function Login() {
   }, []);
 
   useEffect(() => {
-    let interval: string | number | NodeJS.Timeout | undefined;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (blockTimer > 0) {
       interval = setInterval(() => {
         setBlockTimer(prev => {

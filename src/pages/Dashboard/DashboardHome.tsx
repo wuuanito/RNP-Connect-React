@@ -1,12 +1,7 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
-import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
-import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../context/NotificationContext';
-import { format, addDays } from 'date-fns';
-import { parse } from 'date-fns/parse';
-import { startOfWeek } from 'date-fns/startOfWeek';
-import { getDay } from 'date-fns/getDay';
+import withDragAndDrop, { EventInteractionArgs } from 'react-big-calendar/lib/addons/dragAndDrop';
+import { format, parse, startOfWeek, getDay, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   MapPin, 
@@ -14,19 +9,18 @@ import {
   Calendar as CalendarIcon, 
   X, 
   Edit, 
-  X as XIcon,
-  Circle,
-  Filter,
-  Tag,
   Moon,
   Sun,
-  Info
+  Info 
 } from 'lucide-react';
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
+import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 
+// Constantes
 const DragAndDropCalendar = withDragAndDrop(Calendar);
-const API_BASE_URL = 'http://192.168.11.19:3002';
+const API_BASE_URL = 'http://localhost:3002';
 
 // Tipos de evento predefinidos con sus colores
 const EVENT_TYPES = {
@@ -44,6 +38,7 @@ const EVENT_STATUSES = {
   declined: { label: 'Rechazado', color: '#EF4444' }
 } as const;
 
+// Interfaces
 interface Event {
   id: string;
   title: string;
@@ -52,10 +47,23 @@ interface Event {
   end: Date;
   participants: Array<{
     email: string;
-    status: keyof typeof EVENT_STATUSES;
   }>;
   room: string;
   type: keyof typeof EVENT_TYPES;
+}
+
+interface EventDetailsModalProps { 
+  event: Event; 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onEdit: () => void; 
+  onDelete: () => void;
+  onSelectEvent: (event: Event) => void;
+  onOpenDetailsModal: () => void;
+  currentUserEmail: string;
+  isDarkMode: boolean;
+  events?: Event[];
+  hiddenEvents?: Event[];
 }
 
 interface DragEvent {
@@ -99,8 +107,10 @@ interface TooltipProps {
 
 interface LegendProps {
   isDarkMode: boolean;
-}// Componente Tooltip personalizado
-const Tooltip = ({ children, content }: TooltipProps) => {
+}
+
+// Componente Tooltip
+const Tooltip: React.FC<TooltipProps> = ({ children, content }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
@@ -138,54 +148,34 @@ const Tooltip = ({ children, content }: TooltipProps) => {
   );
 };
 
-// Componente de Leyenda
-const Legend = ({ isDarkMode }: LegendProps) => {
+// Componente Legend
+const Legend: React.FC<LegendProps> = ({ isDarkMode }) => {
   return (
     <div className={`p-4 rounded-lg shadow-md mb-4 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Leyenda de Tipos */}
-        <div>
-          <h3 className={`font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-            Tipos de Evento
-          </h3>
-          <div className="space-y-2">
-            {Object.entries(EVENT_TYPES).map(([key, value]) => (
-              <div key={key} className="flex items-center space-x-2">
-                <div
-                  className="w-4 h-4 rounded"
-                  style={{ backgroundColor: value.color }}
-                />
-                <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {value.icon} {value.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Leyenda de Estados */}
-        <div>
-          <h3 className={`font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-            Estados
-          </h3>
-          <div className="space-y-2">
-            {Object.entries(EVENT_STATUSES).map(([key, value]) => (
-              <div key={key} className="flex items-center space-x-2">
-                <Circle className="w-4 h-4" fill={value.color} color={value.color} />
-                <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {value.label}
-                </span>
-              </div>
-            ))}
-          </div>
+      <div>
+        <h3 className={`font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+          Tipos de Evento
+        </h3>
+        <div className="space-y-2">
+          {Object.entries(EVENT_TYPES).map(([key, value]) => (
+            <div key={key} className="flex items-center space-x-2">
+              <div
+                className="w-4 h-4 rounded"
+                style={{ backgroundColor: value.color }}
+              />
+              <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                {value.icon} {value.label}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 };
 
-// Componente de Filtros
-const CalendarFilters = ({ onFilterChange, events, currentUserEmail }: CalendarFiltersProps) => {
+// Componente CalendarFilters
+const CalendarFilters: React.FC<CalendarFiltersProps> = ({ onFilterChange, events, currentUserEmail }) => {
   const [filters, setFilters] = useState<FilterState>({
     status: 'all',
     room: 'all',
@@ -193,12 +183,11 @@ const CalendarFilters = ({ onFilterChange, events, currentUserEmail }: CalendarF
     type: 'all'
   });
 
-  // Obtener valores únicos para los filtros
   const uniqueRooms = [...new Set(events.map(event => event.room))];
   const uniqueParticipants = [...new Set(events.flatMap(event => 
     event.participants.map(p => p.email)
   ))];
-  
+
   const handleFilterChange = (key: keyof FilterState, value: string) => {
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
@@ -280,12 +269,10 @@ const CalendarFilters = ({ onFilterChange, events, currentUserEmail }: CalendarF
   );
 };
 
-// Componente del Evento
-const EventComponent = ({ event, user }: EventComponentProps) => {
-  const userStatus = user?.email 
-    ? event.participants?.find(p => p.email === user.email)?.status || 'pending'
-    : 'pending';
+// Componente EventComponent
+const EventComponent: React.FC<EventComponentProps> = ({ event, user }) => {
   const typeInfo = event.type in EVENT_TYPES ? EVENT_TYPES[event.type] : EVENT_TYPES['OTHER'];
+
   return (
     <Tooltip
       content={
@@ -301,42 +288,151 @@ const EventComponent = ({ event, user }: EventComponentProps) => {
       }
     >
       <div 
-        className="flex items-center space-x-2 p-1 rounded cursor-pointer transition-colors"
+        className="flex items-center space-x-1 py-0.5 px-1 rounded cursor-pointer transition-colors text-xs"
         style={{ 
-          backgroundColor: `${typeInfo.color}15`,
-          borderLeft: `3px solid ${typeInfo.color}`,
-          position: 'relative', // Añadir posición relativa
-          zIndex: 1 // Asegurarse de que el evento esté por encima
+          backgroundColor: typeInfo.color,
+          color: 'white',
+          position: 'relative',
+          zIndex: 1,
+          minHeight: '1.5rem',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis'
         }}
       >
-        <Circle 
-          className="w-2 h-2"
-          style={{ color: EVENT_STATUSES[userStatus].color }}
-          fill="currentColor" 
-        />
-        <div className="flex-1">
-          <div className="font-semibold text-xs dark:text-white">
+        <div className="flex-1 overflow-hidden">
+          <div className="font-semibold truncate">
             {format(event.start, 'HH:mm')} - {event.title}
-          </div>
-          <div className="text-xs text-gray-600 dark:text-gray-300 flex items-center">
-            <span className="mr-1">{typeInfo.icon}</span>
-            {typeInfo.label} • {event.room}
           </div>
         </div>
       </div>
     </Tooltip>
   );
 };
-// Modal de Creación/Edición de Evento
-function EventModal({ 
+
+// Modal de Detalles del Evento
+const EventDetailsModal: React.FC<EventDetailsModalProps> = ({ 
+  event, 
+  isOpen, 
+  onClose, 
+  onEdit, 
+  onDelete,
+  onSelectEvent,
+  onOpenDetailsModal,
+  currentUserEmail,
+  isDarkMode,
+  events,
+  hiddenEvents
+}) => {
+  if (!isOpen) return null;
+
+  const dayEvents = hiddenEvents || events?.filter(e => 
+    e.start.getDate() === event.start.getDate() &&
+    e.start.getMonth() === event.start.getMonth() &&
+    e.start.getFullYear() === event.start.getFullYear()
+  ) || [event];
+
+  const typeInfo = event.type in EVENT_TYPES ? EVENT_TYPES[event.type] : EVENT_TYPES['OTHER'];
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className={`max-w-2xl w-full max-h-[90vh] rounded-lg shadow-xl flex flex-col
+        ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+        {/* Header */}
+        <div className="relative p-6" style={{ backgroundColor: typeInfo.color }}>
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 text-white hover:text-opacity-80 transition-colors"
+          >
+            <X size={24} />
+          </button>
+          <div className="flex items-center space-x-2">
+            <span className="text-2xl">{typeInfo.icon}</span>
+            <div>
+              <h2 className="text-2xl font-bold text-white">
+                {hiddenEvents ? 'Más eventos' : event.title}
+              </h2>
+              <p className="text-white text-opacity-90">
+                {format(event.start, "EEEE d 'de' MMMM", { locale: es })}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className={`flex-1 overflow-y-auto ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+          <div className="p-6">
+            <div className="space-y-4">
+              {dayEvents.map((dayEvent) => {
+                const eventTypeInfo = EVENT_TYPES[dayEvent.type] || EVENT_TYPES['OTHER'];
+                return (
+                  <div 
+                    key={dayEvent.id}
+                    className="p-4 rounded-lg transition-colors hover:bg-opacity-90 cursor-pointer"
+                    style={{ backgroundColor: `${eventTypeInfo.color}15` }}
+                    onClick={() => {
+                      if (hiddenEvents) {
+                        onSelectEvent(dayEvent);
+                        onOpenDetailsModal();
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold">
+                        {format(dayEvent.start, "HH:mm")} - {format(dayEvent.end, "HH:mm")} hrs
+                      </span>
+                      <span className="text-sm">
+                        {eventTypeInfo.icon} {eventTypeInfo.label}
+                      </span>
+                    </div>
+                    
+                    <h3 className="font-medium mb-2">{dayEvent.title}</h3>
+                    <p className="text-sm mb-2">{dayEvent.description}</p>
+                    
+                    <div className="flex items-center space-x-4 text-sm">
+                      <div className="flex items-center space-x-1">
+                        <MapPin className="w-4 h-4" />
+                        <span>{dayEvent.room}</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <Users className="w-4 h-4" />
+                        <span>{dayEvent.participants.length} participantes</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className={`border-t px-6 py-4 flex justify-end space-x-4
+          ${isDarkMode ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+          <button
+            onClick={onClose}
+            className={`px-4 py-2 rounded-lg transition-colors
+              ${isDarkMode 
+                ? 'text-gray-300 hover:bg-gray-700' 
+                : 'text-gray-700 hover:bg-gray-100'}`}
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Componente EventModal
+const EventModal: React.FC<EventModalProps> = ({ 
   isOpen, 
   onClose, 
   onSubmit, 
   startDates, 
   initialData,
   isDarkMode 
-}: EventModalProps) {
-  const [title, setTitle] = useState(initialData?.title || '');
+}) => {
   const [description, setDescription] = useState(initialData?.description || '');
   const [room, setRoom] = useState(initialData?.room || '');
   const [participants, setParticipants] = useState(
@@ -346,11 +442,6 @@ function EventModal({
     initialData?.start 
       ? format(initialData.start, 'HH:mm') 
       : format(new Date(), 'HH:mm')
-  );
-  const [endTime, setEndTime] = useState(
-    initialData?.end
-      ? format(initialData.end, 'HH:mm')
-      : format(new Date(new Date().getTime() + 60 * 60 * 1000), 'HH:mm')
   );
   const [eventType, setEventType] = useState<keyof typeof EVENT_TYPES>(
     initialData?.type || 'OTHER'
@@ -362,54 +453,42 @@ function EventModal({
     e.preventDefault();
     setError('');
     setIsSubmitting(true);
-  
+
     try {
-      // Añadir console.log para debugging
-      console.log('Selected event type:', eventType);
-  
       if (startDates && startDates.length > 0) {
         const eventsToCreate = startDates.map(startDate => {
           const startDateTime = new Date(startDate);
           const [startHour, startMinute] = startTime.split(':').map(Number);
           startDateTime.setHours(startHour, startMinute, 0);
           
-          const [endHour, endMinute] = endTime.split(':').map(Number);
-          const endDateTime = new Date(startDate);
-          endDateTime.setHours(endHour, endMinute, 0);
-  
+          const endDateTime = new Date(startDateTime);
+          endDateTime.setHours(startDateTime.getHours() + 1);
+
           if (new Date() > startDateTime) {
             throw new Error('No puedes crear eventos en el pasado');
           }
-  
-          // Log del objeto que se va a enviar
-          const eventData = {
-            title,
+
+          return {
+            title: room,
             description,
             start: startDateTime,
             end: endDateTime,
-            participants: participants.split(',').map(email => ({
-              email: email.trim(),
-              status: 'pending' as const
-            })),
+            participants: participants.split(',').map(email => ({ email: email.trim() })),
             room,
-            type: eventType // Asegurarse de que se incluye el tipo
+            type: eventType
           };
-          
-          console.log('Event data to create:', eventData);
-          return eventData;
         });
-  
+
         await onSubmit(eventsToCreate);
-      } else {
-            // Resto del código...
-          }
-        } catch (error) {
-          console.error('Error:', error);
-          setError(error instanceof Error ? error.message : 'Error al crear el evento');
-        } finally {
-          setIsSubmitting(false);
-        }
-      };
+        onClose();
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setError(error instanceof Error ? error.message : 'Error al crear el evento');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -435,39 +514,46 @@ function EventModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Tipo de Evento */}
+          {/* Tipo de Evento (Color) */}
           <div>
-            <label className="block text-sm font-medium mb-1">Tipo de Evento</label>
-            <div className="grid grid-cols-2 gap-2">
+            <label className="block text-sm font-medium mb-1">Color del Evento</label>
+            <div className="grid grid-cols-3 gap-2">
               {Object.entries(EVENT_TYPES).map(([key, value]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setEventType(key as keyof typeof EVENT_TYPES)}
-                  className={`p-2 rounded-lg flex items-center space-x-2 transition-colors
-                    ${eventType === key 
-                      ? 'text-white'
-                      : isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}
+                  className={`p-3 rounded-lg transition-colors ${
+                    eventType === key ? 'ring-2 ring-offset-2' : ''
+                  }`}
                   style={{ 
-                    backgroundColor: eventType === key 
-                      ? value.color 
-                      : isDarkMode ? '#374151' : '#F3F4F6'
+                    backgroundColor: value.color,
+                    opacity: eventType === key ? 1 : 0.6
                   }}
-                >
-                  <span>{value.icon}</span>
-                  <span>{value.label}</span>
-                </button>
+                />
               ))}
             </div>
           </div>
 
-          {/* Título */}
+          {/* Hora */}
           <div>
-            <label className="block text-sm font-medium mb-1">Título</label>
+            <label className="block text-sm font-medium mb-1">Hora</label>
+            <input
+              type="time"
+              value={startTime}
+              onChange={e => setStartTime(e.target.value)}
+              className={`w-full p-2 border rounded-lg ${inputClasses}`}
+              required
+            />
+          </div>
+
+          {/* Sala */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Sala</label>
             <input
               type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
+              value={room}
+              onChange={e => setRoom(e.target.value)}
               className={`w-full p-2 border rounded-lg ${inputClasses}`}
               required
             />
@@ -481,42 +567,6 @@ function EventModal({
               onChange={e => setDescription(e.target.value)}
               className={`w-full p-2 border rounded-lg ${inputClasses}`}
               rows={3}
-              required
-            />
-          </div>
-
-          {/* Horario */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Hora Inicio</label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={e => setStartTime(e.target.value)}
-                className={`w-full p-2 border rounded-lg ${inputClasses}`}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Hora Fin</label>
-              <input
-                type="time"
-                value={endTime}
-                onChange={e => setEndTime(e.target.value)}
-                className={`w-full p-2 border rounded-lg ${inputClasses}`}
-                required
-              />
-            </div>
-          </div>
-
-          {/* Sala */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Sala</label>
-            <input
-              type="text"
-              value={room}
-              onChange={e => setRoom(e.target.value)}
-              className={`w-full p-2 border rounded-lg ${inputClasses}`}
               required
             />
           </div>
@@ -569,582 +619,414 @@ function EventModal({
       </div>
     </div>
   );
-}
-
-// Modal de Detalles del Evento
-function EventDetailsModal({ 
-  event, 
-  isOpen, 
-  onClose, 
-  onEdit, 
-  onDelete,
-  currentUserEmail,
-  isDarkMode 
-}: { 
-  event: Event; 
-  isOpen: boolean; 
-  onClose: () => void; 
-  onEdit: () => void; 
-  onDelete: () => void;
-  currentUserEmail: string;
-  isDarkMode: boolean;
-}) {
-  if (!isOpen) return null;
-
-  const typeInfo = event.type in EVENT_TYPES ? EVENT_TYPES[event.type] : EVENT_TYPES['OTHER'];
-        const userStatus = event.participants.find(p => p.email === currentUserEmail)?.status || 'pending';
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className={`max-w-2xl w-full max-h-[90vh] overflow-hidden rounded-lg shadow-xl 
-        ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-        {/* Header */}
-        <div className="relative p-6" style={{ backgroundColor: typeInfo.color }}>
-          <button
-            onClick={onClose}
-            className="absolute right-4 top-4 text-white hover:text-opacity-80 transition-colors"
-          >
-            <X size={24} />
-          </button>
-          <div className="flex items-center space-x-2">
-            <span className="text-2xl">{typeInfo.icon}</span>
-            <div>
-              <h2 className="text-2xl font-bold text-white mb-2">{event.title}</h2>
-              <p className="text-white text-opacity-90">{event.description}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className={`p-6 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-          <div className="space-y-6">
-            {/* Status */}
-            <div className="flex items-center space-x-3">
-              <Circle 
-                className="w-5 h-5" 
-                style={{ color: EVENT_STATUSES[userStatus].color }}
-                fill="currentColor"
-              />
-              <p>Estado: {EVENT_STATUSES[userStatus].label}</p>
-            </div>
-
-            {/* Fecha y Hora */}
-            <div className="flex items-center space-x-3">
-              <CalendarIcon className="w-5 h-5" style={{ color: typeInfo.color }} />
-              <div>
-                <p>
-                  {format(event.start, "EEEE d 'de' MMMM 'de' yyyy", { locale: es })}
-                </p>
-                <p>
-                  {format(event.start, "HH:mm")} - {format(event.end, "HH:mm")} hrs
-                </p>
-              </div>
-            </div>
-
-            {/* Sala */}
-            <div className="flex items-center space-x-3">
-              <MapPin className="w-5 h-5" style={{ color: typeInfo.color }} />
-              <p>{event.room}</p>
-            </div>
-
-            {/* Participantes */}
-            <div className={`border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'} pt-4`}>
-              <div className="flex items-center space-x-3 mb-3">
-                <Users className="w-5 h-5" style={{ color: typeInfo.color }} />
-                <h3 className="font-medium">Participantes</h3>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                {event.participants.map((participant, index) => (
-                  <div 
-                    key={index} 
-                    className={`p-2 rounded-lg flex items-center justify-between
-                      ${participant.email === currentUserEmail 
-                        ? (isDarkMode ? 'bg-green-900' : 'bg-green-50')
-                        : (isDarkMode ? 'bg-gray-700' : 'bg-gray-50')}`}
-                  >
-                    <span className="text-sm">{participant.email}</span>
-                    <Circle 
-                      className="w-3 h-3" 
-                      style={{ color: EVENT_STATUSES[participant.status].color }}
-                      fill="currentColor"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className={`border-t px-6 py-4 flex justify-between
-          ${isDarkMode 
-            ? 'bg-gray-900 border-gray-700' 
-            : 'bg-gray-50 border-gray-200'}`}>
-          <button
-            onClick={onDelete}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 
-              transition-colors inline-flex items-center"
-          >
-            <XIcon size={16} className="mr-2" />
-            Eliminar Evento
-          </button>
-          <div className="space-x-4">
-            <button
-              onClick={onEdit}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 
-              transition-colors inline-flex items-center"
-          >
-            <Edit size={16} className="mr-2" />
-            Editar
-          </button>
-          <button
-            onClick={onClose}
-            className={`px-4 py-2 rounded-lg transition-colors
-              ${isDarkMode 
-                ? 'text-gray-300 hover:bg-gray-700' 
-                : 'text-gray-700 hover:bg-gray-100'}`}
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-}
-
-// Estilos CSS para el modo oscuro del calendario
+};
+// Estilos para el modo oscuro
 const calendarDarkStyles = `
 .rbc-calendar-dark {
-background-color: #1f2937;
-color: #fff;
+  background-color: #1f2937;
+  color: #fff;
 }
 
 .rbc-calendar-dark .rbc-header {
-background-color: #374151;
-color: #fff;
-border-color: #4b5563;
+  background-color: #374151;
+  color: #fff;
+  border-color: #4b5563;
 }
 
 .rbc-calendar-dark .rbc-month-view {
-border-color: #4b5563;
+  border-color: #4b5563;
 }
 
 .rbc-calendar-dark .rbc-day-bg {
-background-color: #1f2937;
-border-color: #4b5563;
+  background-color: #1f2937;
+  border-color: #4b5563;
 }
 
 .rbc-calendar-dark .rbc-today {
-background-color: #374151;
+  background-color: #374151;
 }
 
 .rbc-calendar-dark .rbc-off-range-bg {
-background-color: #111827;
+  background-color: #111827;
 }
 
 .rbc-calendar-dark .rbc-toolbar button {
-color: #fff;
-border-color: #4b5563;
+  color: #fff;
+  border-color: #4b5563;
 }
 
 .rbc-calendar-dark .rbc-toolbar button:hover {
-background-color: #374151;
+  background-color: #374151;
 }
 
 .rbc-calendar-dark .rbc-toolbar button.rbc-active {
-background-color: #4b5563;
+  background-color: #4b5563;
 }
 `;
 
-// Componente Principal del Calendario
-export default function DashboardHome() {
-const [events, setEvents] = useState<Event[]>([]);
-const [isModalOpen, setIsModalOpen] = useState(false);
-const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date; } | null>(null);
-const [selectedDates, setSelectedDates] = useState<Date[]>([]);
-const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-const [isLoading, setIsLoading] = useState(true);
-const [isDarkMode, setIsDarkMode] = useState(false);
-const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
-const { user } = useAuth();
-const { addNotification } = useNotifications();
+// Componente Principal
+const DashboardHome: React.FC = () => {
+  // Estados
+  const [events, setEvents] = useState<Event[]>([]);
+  const [hiddenEvents, setHiddenEvents] = useState<Event[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date; } | null>(null);
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
 
-// Efecto para el modo oscuro
-useEffect(() => {
-  const darkMode = localStorage.getItem('darkMode') === 'true';
-  setIsDarkMode(darkMode);
-  if (darkMode) {
-    document.documentElement.classList.add('dark');
-  }
-  
-  // Agregar estilos del calendario en modo oscuro
-  const styleElement = document.createElement('style');
-  styleElement.textContent = calendarDarkStyles;
-  document.head.appendChild(styleElement);
+  // Hooks de contexto
+  const { user } = useAuth();
+  const { addNotification } = useNotifications();
 
-  return () => {
-    document.head.removeChild(styleElement);
-  };
-}, []);
-
-// Cargar eventos al inicio
-useEffect(() => {
-  fetchEvents();
-}, []);
-
-const toggleDarkMode = () => {
-  setIsDarkMode(prev => {
-    const newMode = !prev;
-    localStorage.setItem('darkMode', String(newMode));
-    if (newMode) {
+  // Efectos
+  useEffect(() => {
+    const darkMode = localStorage.getItem('darkMode') === 'true';
+    setIsDarkMode(darkMode);
+    if (darkMode) {
       document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
     }
-    return newMode;
-  });
-};
+    
+    const styleElement = document.createElement('style');
+    styleElement.textContent = calendarDarkStyles;
+    document.head.appendChild(styleElement);
 
-const fetchEvents = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/events`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  // Manejadores de eventos
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => {
+      const newMode = !prev;
+      localStorage.setItem('darkMode', String(newMode));
+      if (newMode) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
       }
+      return newMode;
     });
+  };
 
-    if (!response.ok) throw new Error('Error fetching events');
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/events`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
 
-    const data = await response.json();
-    const formattedEvents = data.map((event: any) => {
-      // Depuración para entender qué tipo de evento se está recibiendo
-      console.log('Evento recibido:', {
-          type: event.type,
-          typeExists: event.type in EVENT_TYPES
+      if (!response.ok) throw new Error('Error fetching events');
+
+      const data = await response.json();
+      const formattedEvents = data.map((event: any) => ({
+        ...event,
+        start: new Date(event.start_date),
+        end: new Date(event.end_date),
+        type: event.type in EVENT_TYPES ? event.type : 'OTHER'
+      }));
+      
+      setEvents(formattedEvents);
+      setFilteredEvents(formattedEvents);
+    } catch (error) {
+      console.error('Error:', error);
+      addNotification({
+        title: 'Error',
+        message: 'No se pudieron cargar los eventos',
+        type: 'event'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEventDrop = async ({ event, start, end }: EventInteractionArgs<Event>) => {
+    try {
+      const eventToSend = {
+        title: event.title,
+        description: event.description,
+        start_date: start.toString(),
+        end_date: end.toString(),
+        participants: event.participants,
+        room: event.room,
+        type: event.type
+      };
+  
+      const response = await fetch(`${API_BASE_URL}/api/events/${event.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(eventToSend)
       });
   
-      return {
-          ...event,
-          start: new Date(event.start_date),
-          end: new Date(event.end_date),
-          // Solo usa el tipo si existe exactamente en EVENT_TYPES, de lo contrario usa 'OTHER'
-          type: event.type in EVENT_TYPES ? event.type : 'OTHER'
-      };
-  });
-  
-    
-    setEvents(formattedEvents);
-    setFilteredEvents(formattedEvents);
-  } catch (error) {
-    console.error('Error:', error);
-    addNotification({
-      title: 'Error',
-      message: 'No se pudieron cargar los eventos',
-      type: 'event'
-    });
-  } finally {
-    setIsLoading(false);
-  }
-};
-const handleEventDrop = async ({ event, start, end }: any) => {
-  try {
-    const eventToSend = {
-      title: event.title,
-      description: event.description,
-      start_date: start.toISOString(),
-      end_date: end.toISOString(),
-      participants: event.participants,
-      room: event.room,
-      type: event.type
-    };
-
-    console.log('Sending drag update:', eventToSend);
-
-    const response = await fetch(`${API_BASE_URL}/api/events/${event.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(eventToSend)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || 'Error updating event');
-    }
-
-    const updatedEvent = await response.json();
-    const formattedEvent = {
-      ...updatedEvent,
-      id: updatedEvent.id,
-      start: new Date(updatedEvent.start_date),
-      end: new Date(updatedEvent.end_date),
-      type: updatedEvent.type || 'OTHER'
-    };
-
-    setEvents(prev => prev.map(e => 
-      e.id === event.id ? formattedEvent : e
-    ));
-
-    addNotification({
-      title: 'Éxito',
-      message: 'Evento actualizado correctamente',
-      type: 'event'
-    });
-  } catch (error) {
-    console.error('Error:', error);
-    addNotification({
-      title: 'Error',
-      message: 'No se pudo actualizar el evento',
-      type: 'event'
-    });
-  }
-};
-
-const handleEventResize = async ({ event, start, end }: any) => {
-  try {
-    await handleEventDrop({ event, start, end });
-  } catch (error) {
-    console.error('Error resizing event:', error);
-  }
-};
-
-
-const handleEventCreate = async (eventsToCreate: Omit<Event, 'id'>[]) => {
-  try {
-    console.log('Events to create:', eventsToCreate); // Debug log
-
-    const eventToSend = {
-      title: eventsToCreate[0].title,
-      description: eventsToCreate[0].description,
-      start: eventsToCreate[0].start.toISOString(),
-      end: eventsToCreate[0].end.toISOString(),
-      participants: eventsToCreate[0].participants,
-      room: eventsToCreate[0].room,
-      type: eventsToCreate[0].type
-    };
-
-    console.log('Sending to backend:', eventToSend); // Debug log
-
-    const response = await fetch(`${API_BASE_URL}/api/events`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(eventToSend)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || 'Error creating event');
-    }
-
-    const newEvent = await response.json();
-    console.log('Response from backend:', newEvent); // Debug log
-
-    const formattedEvent: Event = {
-      ...newEvent,
-      id: newEvent.id,
-      start: new Date(newEvent.start_date || newEvent.start),
-      end: new Date(newEvent.end_date || newEvent.end),
-      type: eventToSend.type, // Usar el tipo que enviamos
-      participants: newEvent.participants || eventsToCreate[0].participants
-    };
-
-    console.log('Formatted event:', formattedEvent); // Debug log
-
-    setEvents(prev => [...prev, formattedEvent]);
-    setFilteredEvents(prev => [...prev, formattedEvent]);
-
-    addNotification({
-      title: 'Éxito',
-      message: 'Evento creado correctamente',
-      type: 'event'
-    });
-
-  } catch (error) {
-    console.error('Error:', error);
-    addNotification({
-      title: 'Error',
-      message: error instanceof Error ? error.message : 'No se pudo crear el evento',
-      type: 'event'
-    });
-    throw error;
-  }
-};
-
-const handleEventUpdate = async (eventId: string, eventData: Omit<Event, 'id'>) => {
-  try {
-    const eventToSend = {
-      title: eventData.title,
-      description: eventData.description,
-      start_date: eventData.start.toISOString(), // Cambiado de start a start_date
-      end_date: eventData.end.toISOString(),     // Cambiado de end a end_date
-      participants: eventData.participants,
-      room: eventData.room,
-      type: eventData.type
-    };
-
-    console.log('Sending update:', eventToSend); // Para debugging
-
-    const response = await fetch(`${API_BASE_URL}/api/events/${eventId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(eventToSend)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || 'Error updating event');
-    }
-
-    const updatedEvent = await response.json();
-    const formattedEvent = {
-      ...updatedEvent,
-      id: updatedEvent.id,
-      start: new Date(updatedEvent.start_date),
-      end: new Date(updatedEvent.end_date),
-      type: updatedEvent.type || 'OTHER'
-    };
-
-    setEvents(prev => prev.map(event => 
-      event.id === eventId ? formattedEvent : event
-    ));
-
-    addNotification({
-      title: 'Éxito',
-      message: 'Evento actualizado correctamente',
-      type: 'event'
-    });
-
-  } catch (error) {
-    console.error('Error:', error);
-    addNotification({
-      title: 'Error',
-      message: error instanceof Error ? error.message : 'No se pudo actualizar el evento',
-      type: 'event'
-    });
-    throw error;
-  }
-};
-
-const handleEventDelete = async (eventId: string) => {
-  if (!window.confirm('¿Estás seguro de que deseas eliminar este evento?')) return;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/events/${eventId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error updating event');
       }
-    });
-
-    if (!response.ok) throw new Error('Error deleting event');
-
-    setEvents(prev => prev.filter(event => event.id !== eventId));
-    addNotification({
-      title: 'Éxito',
-      message: 'Evento eliminado correctamente',
-      type: 'event'
-    });
-
-  } catch (error) {
-    console.error('Error:', error);
-    addNotification({
-      title: 'Error',
-      message: 'No se pudo eliminar el evento',
-      type: 'event'
-    });
-  }
-};
-
-const handleSelectSlot = ({ start, end }: { start: Date; end: Date }) => {
-  if (start.getTime() === end.getTime()) {
-    setSelectedSlot({ start, end });
-    setSelectedDates([start]);
-    setIsModalOpen(true);
-    return;
-  }
-
-  const dates: Date[] = [];
-  let currentDate = new Date(start);
   
-  while (currentDate < end) {
-    dates.push(new Date(currentDate));
-    currentDate = addDays(currentDate, 1);
-  }
+      const updatedEvent = await response.json();
+      const formattedEvent = {
+        ...updatedEvent,
+        id: updatedEvent.id,
+        start: new Date(updatedEvent.start_date),
+        end: new Date(updatedEvent.end_date),
+        type: updatedEvent.type || 'OTHER'
+      };
+  
+      setEvents(prev => prev.map(e => 
+        e.id === event.id ? formattedEvent : e
+      ));
+  
+      addNotification({
+        title: 'Éxito',
+        message: 'Evento actualizado correctamente',
+        type: 'event'
+      });
+    } catch (error) {
+      console.error('Error:', error);
+      addNotification({
+        title: 'Error',
+        message: 'No se pudo actualizar el evento',
+        type: 'event'
+      });
+    }
+  };
+  
+  const handleEventResize = async (args: EventInteractionArgs<Event>) => {
+    try {
+      await handleEventDrop(args);
+    } catch (error) {
+      console.error('Error resizing event:', error);
+    }
+  };
 
-  setSelectedDates(dates);
-  setSelectedSlot(null);
-  setIsModalOpen(true);
-};
+  const handleEventCreate = async (eventsToCreate: Omit<Event, 'id'>[]) => {
+    try {
+      const eventToSend = {
+        title: eventsToCreate[0].title,
+        description: eventsToCreate[0].description,
+        start: eventsToCreate[0].start.toISOString(),
+        end: eventsToCreate[0].end.toISOString(),
+        participants: eventsToCreate[0].participants,
+        room: eventsToCreate[0].room,
+        type: eventsToCreate[0].type
+      };
 
-const handleSelectEvent = (event: Event, e: React.SyntheticEvent<HTMLElement>) => {
-  setSelectedEvent(event);
-  setIsDetailsModalOpen(true);
-};
+      const response = await fetch(`${API_BASE_URL}/api/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(eventToSend)
+      });
 
-const handleFilterChange = (newFilters: FilterState) => {
-  const filtered = events.filter(event => {
-    if (newFilters.status !== 'all') {
-      const userStatus = event.participants.find(p => p.email === user?.email)?.status;
-      if (userStatus !== newFilters.status) return false;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error creating event');
+      }
+
+      const newEvent = await response.json();
+      const formattedEvent = {
+        ...newEvent,
+        id: newEvent.id,
+        start: new Date(newEvent.start_date || newEvent.start),
+        end: new Date(newEvent.end_date || newEvent.end),
+        type: eventToSend.type,
+        participants: newEvent.participants || eventsToCreate[0].participants
+      };
+
+      setEvents(prev => [...prev, formattedEvent]);
+      setFilteredEvents(prev => [...prev, formattedEvent]);
+
+      addNotification({
+        title: 'Éxito',
+        message: 'Evento creado correctamente',
+        type: 'event'
+      });
+
+    } catch (error) {
+      console.error('Error:', error);
+      addNotification({
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'No se pudo crear el evento',
+        type: 'event'
+      });
+      throw error;
+    }
+  };
+
+  const handleEventUpdate = async (eventId: string, eventData: Omit<Event, 'id'>) => {
+    try {
+      const eventToSend = {
+        title: eventData.title,
+        description: eventData.description,
+        start_date: eventData.start.toISOString(),
+        end_date: eventData.end.toISOString(),
+        participants: eventData.participants,
+        room: eventData.room,
+        type: eventData.type
+      };
+
+      const response = await fetch(`${API_BASE_URL}/api/events/${eventId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(eventToSend)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error updating event');
+      }
+
+      const updatedEvent = await response.json();
+      const formattedEvent = {
+        ...updatedEvent,
+        id: updatedEvent.id,
+        start: new Date(updatedEvent.start_date),
+        end: new Date(updatedEvent.end_date),
+        type: updatedEvent.type || 'OTHER'
+      };
+
+      setEvents(prev => prev.map(event => 
+        event.id === eventId ? formattedEvent : event
+      ));
+
+      addNotification({
+        title: 'Éxito',
+        message: 'Evento actualizado correctamente',
+        type: 'event'
+      });
+
+    } catch (error) {
+      console.error('Error:', error);
+      addNotification({
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'No se pudo actualizar el evento',
+        type: 'event'
+      });
+      throw error;
+    }
+  };
+
+  const handleEventDelete = async (eventId: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este evento?')) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/events/${eventId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Error deleting event');
+
+      setEvents(prev => prev.filter(event => event.id !== eventId));
+      addNotification({
+        title: 'Éxito',
+        message: 'Evento eliminado correctamente',
+        type: 'event'
+      });
+
+    } catch (error) {
+      console.error('Error:', error);
+      addNotification({
+        title: 'Error',
+        message: 'No se pudo eliminar el evento',
+        type: 'event'
+      });
+    }
+  };
+
+  const handleSelectSlot = ({ start, end }: { start: Date; end: Date }) => {
+    if (start.getTime() === end.getTime()) {
+      setSelectedSlot({ start, end });
+      setSelectedDates([start]);
+      setIsModalOpen(true);
+      return;
     }
 
-    if (newFilters.room !== 'all' && event.room !== newFilters.room) return false;
+    const dates: Date[] = [];
+    let currentDate = new Date(start);
+    
+    while (currentDate < end) {
+      dates.push(new Date(currentDate));
+      currentDate = addDays(currentDate, 1);
+    }
 
-    if (newFilters.participant !== 'all' && 
-        !event.participants.some(p => p.email === newFilters.participant)) return false;
+    setSelectedDates(dates);
+    setSelectedSlot(null);
+    setIsModalOpen(true);
+  };
 
-    if (newFilters.type !== 'all' && event.type !== newFilters.type) return false;
+  const handleSelectEvent = (event: Event, e: React.SyntheticEvent<HTMLElement>) => {
+    setSelectedEvent(event);
+    setIsDetailsModalOpen(true);
+  };
 
-    return true;
-  });
+  const handleFilterChange = (newFilters: FilterState) => {
+    const filtered = events.filter(event => {
+      if (newFilters.room !== 'all' && event.room !== newFilters.room) return false;
+      if (newFilters.participant !== 'all' && 
+          !event.participants.some(p => p.email === newFilters.participant)) return false;
+      if (newFilters.type !== 'all' && event.type !== newFilters.type) return false;
+      return true;
+    });
 
-  setFilteredEvents(filtered);
-};
+    setFilteredEvents(filtered);
+  };
 
-if (isLoading) {
+  // Renderizado condicional para loading
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-900"></div>
+      </div>
+    );
+  }
+
+  // Render principal
   return (
-    <div className="flex justify-center items-center h-full">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-900"></div>
-    </div>
-  );
-}
+    <div className={`p-6 rounded-lg shadow transition-colors ${
+      isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'
+    }`}>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Calendario de Eventos</h1>
+        <button
+          onClick={toggleDarkMode}
+          className={`p-2 rounded-lg transition-colors ${
+            isDarkMode ? 'bg-gray-700 text-yellow-400' : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
+        </button>
+      </div>
 
-return (
-  <div className={`p-6 rounded-lg shadow transition-colors ${
-    isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'
-  }`}>
-    <div className="flex justify-between items-center mb-6">
-      <h1 className="text-3xl font-bold">Calendario de Eventos</h1>
-      <button
-        onClick={toggleDarkMode}
-        className={`p-2 rounded-lg transition-colors ${
-          isDarkMode ? 'bg-gray-700 text-yellow-400' : 'bg-gray-100 text-gray-600'
-        }`}
-      >
-        {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
-      </button>
-    </div>
+      <CalendarFilters 
+        onFilterChange={handleFilterChange}
+        events={events}
+        currentUserEmail={user?.email || ''}
+      />
 
-    <CalendarFilters 
-      onFilterChange={handleFilterChange}
-      events={events}
-      currentUserEmail={user?.email || ''}
-    />
+      <Legend isDarkMode={isDarkMode} />
 
-    <Legend isDarkMode={isDarkMode} />
-
-    <div className={`h-[calc(100vh-16rem)] ${isDarkMode ? 'rbc-calendar-dark' : ''}`}>
-    <DragAndDropCalendar
+      <div className={`h-[calc(100vh-16rem)] ${isDarkMode ? 'rbc-calendar-dark' : ''}`}>
+      <DragAndDropCalendar
   localizer={dateFnsLocalizer({ 
     format, 
     parse, 
@@ -1153,24 +1035,18 @@ return (
     locales: { es } 
   })}
   events={filteredEvents}
-  startAccessor={(event) => (event as Event).start}
-  endAccessor={(event) => (event as Event).end}
+  startAccessor={(event) => new Date((event as Event).start)}
+  endAccessor={(event) => new Date((event as Event).end)}
   selectable
   resizable
-  onEventDrop={(data) => {
-    const { event, start, end } = data as { event: Event; start: Date; end: Date };
-    handleEventDrop({ event, start, end });
-  }}
-  onEventResize={(data) => {
-    const { event, start, end } = data as { event: Event; start: Date; end: Date };
-    handleEventResize({ event, start, end });
-  }}
+  onEventDrop={(args) => handleEventDrop(args as EventInteractionArgs<Event>)}
+  onEventResize={(args) => handleEventResize(args as EventInteractionArgs<Event>)}
   onSelectSlot={handleSelectSlot}
   onSelectEvent={(event, e) => handleSelectEvent(event as Event, e)}
   views={['month']}
   defaultView="month"
   components={{
-    event: (props) => <EventComponent {...props} event={props.event as Event} user={user} />
+    event: ({ event }) => <EventComponent event={event as Event} user={user} />,
   }}
   messages={{
     next: "Siguiente",
@@ -1187,47 +1063,66 @@ return (
       `${format(start, 'dd/MM', {locale: es})} - ${format(end, 'dd/MM', {locale: es})}`,
   }}
   className={isDarkMode ? 'rbc-calendar-dark' : 'rbc-calendar-light'}
+  eventPropGetter={(event) => ({
+    style: {
+      backgroundColor: 'transparent',
+      border: 'none'
+    }
+  })}
+  slotPropGetter={(date) => ({
+    style: {
+      minHeight: '120px'
+    }
+  })}
 />
-    </div>
 
-    {/* Modales */}
-    <EventModal
-      isOpen={isModalOpen}
-      onClose={() => {
-        setIsModalOpen(false);
-        setSelectedEvent(null);
-        setSelectedSlot(null);
-        setSelectedDates([]);
-      }}
-      onSubmit={selectedEvent 
-        ? (data) => handleEventUpdate(selectedEvent.id, data[0])
-        : handleEventCreate}
-      startDates={selectedDates.length > 0 ? selectedDates : undefined}
-      initialData={selectedEvent || undefined}
-      isDarkMode={isDarkMode}
-    />
-
-    {selectedEvent && (
-      <EventDetailsModal
-        event={selectedEvent}
-        isOpen={isDetailsModalOpen}
+      {/* Modales */}
+      <EventModal
+        isOpen={isModalOpen}
         onClose={() => {
-          setIsDetailsModalOpen(false);
+          setIsModalOpen(false);
           setSelectedEvent(null);
+          setSelectedSlot(null);
+          setSelectedDates([]);
         }}
-        onEdit={() => {
-          setIsDetailsModalOpen(false);
-          setIsModalOpen(true);
-        }}
-        onDelete={() => {
-          handleEventDelete(selectedEvent.id);
-          setIsDetailsModalOpen(false);
-          setSelectedEvent(null);
-        }}
-        currentUserEmail={user?.email || ''}
+        onSubmit={selectedEvent 
+          ? (data) => handleEventUpdate(selectedEvent.id, data[0])
+          : handleEventCreate}
+        startDates={selectedDates.length > 0 ? selectedDates : undefined}
+        initialData={selectedEvent || undefined}
         isDarkMode={isDarkMode}
       />
-    )}
-  </div>
-);
-}
+
+      {selectedEvent && (
+        <EventDetailsModal
+          event={selectedEvent}
+          events={filteredEvents}
+          hiddenEvents={hiddenEvents}
+          isOpen={isDetailsModalOpen}
+          onSelectEvent={setSelectedEvent}
+          onOpenDetailsModal={() => setIsDetailsModalOpen(true)}
+          onClose={() => {
+            setIsDetailsModalOpen(false);
+            setSelectedEvent(null);
+            setHiddenEvents([]);
+          }}
+          onEdit={() => {
+            setIsDetailsModalOpen(false);
+            setIsModalOpen(true);
+          }}
+          onDelete={() => {
+            handleEventDelete(selectedEvent.id);
+            setIsDetailsModalOpen(false);
+            setSelectedEvent(null);
+          }}
+          currentUserEmail={user?.email || ''}
+          isDarkMode={isDarkMode}
+        />
+      )}
+    </div>
+  );
+  
+};
+
+
+export default DashboardHome;
